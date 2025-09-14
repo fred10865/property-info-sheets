@@ -1,0 +1,83 @@
+H2O Wave Documentation Summary
+=====================================
+
+KEY INSIGHTS FROM DOCUMENTATION:
+
+1. **Two Different Patterns for Wave Apps:**
+
+   Pattern A: Simple Scripts (no @app decorator)
+   --------------------------------------------
+   - Use: from h2o_wave import site, ui
+   - Access pages via: page = site['/route']
+   - Add content: page['card_name'] = ui.card_type(...)
+   - Save changes: page.save()
+   - Example:
+     ```python
+     from h2o_wave import site, ui
+     page = site['/hello']
+     page['quote'] = ui.markdown_card(box='1 1 2 2', title='Hello', content='...')
+     page.save()
+     ```
+
+   Pattern B: Interactive Apps (with @app decorator)
+   ------------------------------------------------
+   - Use: from h2o_wave import main, app, Q, ui
+   - Use @app decorator: @app('/route')
+   - Define async function: async def serve(q: Q):
+   - Access page via: q.page
+   - Handle user interactions via: q.args
+   - Save changes: await q.page.save()
+   - Launch with: main() (NO ARGUMENTS)
+   - Example:
+     ```python
+     from h2o_wave import main, app, Q, ui
+     
+     @app('/counter')
+     async def serve(q: Q):
+         if q.args.increment:
+             # handle button click
+         q.page['form'] = ui.form_card(...)
+         await q.page.save()
+     
+     if __name__ == '__main__':
+         main()  # NO ARGUMENTS
+     ```
+
+2. **Wave Server Requirements:**
+   - H2O Wave requires a separate Wave server to be running
+   - The server can be started with: ./waved (Unix) or waved.exe (Windows)
+   - Apps communicate through this server
+   - Server runs on http://localhost:10101 by default
+   - Apps can auto-start server with: wave run command
+   - OR for scripts, server must be manually started first
+
+3. **UI Model:**
+   - Page contains cards: page['card_name'] = ui.card_type(...)
+   - Cards have box positioning: box='column row width height'
+   - Common card types: form_card, markdown_card, text_card
+   - Form cards contain items: items=[ui.text(), ui.button(), ui.textbox(), ...]
+
+4. **Interactive Apps:**
+   - Use q.args to check what user clicked/changed
+   - Use q.page to access and modify the page
+   - Always await q.page.save() to push changes to browser
+   - Global variables can track state between interactions
+
+5. **Key Differences from Streamlit:**
+   - Wave is event-driven (async/await pattern)
+   - State persists in server, not re-run each time
+   - More explicit page/card structure
+   - Requires separate Wave server process
+
+CRITICAL FOR OUR APP:
+- Must use Pattern B (interactive app with @app decorator)
+- Entry point: main() with NO arguments
+- Page access: q.page (not site['/route'])
+- Async function required
+- Must handle user interactions via q.args
+- Save with: await q.page.save()
+
+STARTUP SEQUENCE:
+1. Start Wave server (manual or auto)
+2. Run Python app with main()
+3. Navigate to route in browser

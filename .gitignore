@@ -1,0 +1,40 @@
+# Ignore files we don't want to upload
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Don't upload Wave server files
+wave-1.7.4-windows-amd64/
+wave-server.tar.gz
+*.tar.gz
+
+# Don't upload backup files
+*_backup_*.xlsx
+~$*.xlsx
+
+# Don't upload old versions
+simple_wave.py
+improved_wave.py
+final_wave.py
+app.py
+wave_app.py
+test_wave.py
