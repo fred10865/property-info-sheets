@@ -20,7 +20,13 @@ PRODUCTION_PORT = int(os.environ.get("PORT", 8000))
 
 def get_property_files():
     """Get list of Excel files that represent properties"""
-    return [f for f in glob.glob("*.xlsx") if not f.startswith("~")]
+    try:
+        files = [f for f in glob.glob("*.xlsx") if not f.startswith("~")]
+        print(f"📁 Found {len(files)} Excel files: {files}")
+        return files
+    except Exception as e:
+        print(f"⚠️ Error scanning for Excel files: {e}")
+        return []
 
 def load_property_data(property_id):
     """Load property data from Excel file"""
@@ -199,15 +205,68 @@ PROPERTY_FORM_TEMPLATE = """
 </html>
 """
 
+def ensure_sample_data():
+    """Create sample Excel file if no property files exist"""
+    if not get_property_files():
+        print("📝 No Excel files found, creating sample property...")
+        try:
+            # Sample property data
+            data = [
+                ['Property Information', ''],
+                ['Property Name', 'Sample Property'],
+                ['Address', '123 Main Street'],
+                ['City', 'Springfield'],
+                ['State', 'IL'],
+                ['Zip Code', '62701'],
+                ['', ''],
+                ['Financial Information', ''],
+                ['Purchase Price', '$250,000'],
+                ['Current Value', '$275,000'],
+                ['Monthly Rent', '$1,800'],
+                ['Property Tax', '$3,200'],
+                ['', ''],
+                ['Property Details', ''],
+                ['Year Built', '1995'],
+                ['Square Feet', '1,500'],
+                ['Bedrooms', '3'],
+                ['Bathrooms', '2'],
+                ['Garage', 'Yes'],
+                ['', ''],
+                ['Important Info', ''],
+                ['Property Manager', 'John Smith'],
+                ['Manager Phone', '555-0123'],
+                ['Tenant Name', 'Jane Doe'],
+                ['Lease End Date', '12/31/2025'],
+                ['Notes', 'Great property in excellent condition. Upload your own Excel files to replace this sample.'],
+            ]
+            
+            # Create DataFrame and save
+            df = pd.DataFrame(data, columns=['Field', 'Value'])
+            with pd.ExcelWriter('Sample_Property.xlsx', engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Property Info', index=False, header=False)
+            
+            print("✅ Created Sample_Property.xlsx for demonstration")
+        except Exception as e:
+            print(f"⚠️ Could not create sample file: {e}")
+
 @app.route('/')
 def index():
     return redirect(url_for('properties'))
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway"""
+    return {"status": "healthy", "app": "Property Info Sheets"}, 200
+
 @app.route('/properties')
 def properties():
-    property_files = get_property_files()
-    properties = [f.replace('.xlsx', '') for f in property_files]
-    return render_template_string(PROPERTY_LIST_TEMPLATE, properties=properties)
+    try:
+        property_files = get_property_files()
+        properties = [f.replace('.xlsx', '') for f in property_files]
+        return render_template_string(PROPERTY_LIST_TEMPLATE, properties=properties)
+    except Exception as e:
+        print(f"❌ Error in properties route: {e}")
+        return f"Error loading properties: {str(e)}", 500
 
 @app.route('/property/<property_id>', methods=['GET', 'POST'])
 def property_detail(property_id):
@@ -241,10 +300,24 @@ def property_detail(property_id):
 
 if __name__ == "__main__":
     print("🚀 Starting Property Info Sheet Web App...")
-    print(f"🌐 Running on http://{PRODUCTION_HOST}:{PRODUCTION_PORT}")
+    
+    # Get port from environment (Railway sets this automatically)
+    port = int(os.environ.get("PORT", 8000))
+    host = "0.0.0.0"  # Railway requires 0.0.0.0
+    
+    print(f"🌐 Running on http://{host}:{port}")
     
     # Create required directories
     os.makedirs("backups", exist_ok=True)
     
-    # Start the Flask app
-    app.run(host=PRODUCTION_HOST, port=PRODUCTION_PORT, debug=False)
+    # Ensure we have sample data for demonstration
+    ensure_sample_data()
+    
+    # Start the Flask app with proper Railway configuration
+    app.run(
+        host=host, 
+        port=port, 
+        debug=False,
+        threaded=True,
+        use_reloader=False
+    )
