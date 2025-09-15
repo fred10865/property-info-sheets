@@ -486,9 +486,9 @@ PROPERTY_FORM_TEMPLATE = """
                     <div class="section">
                         <div class="section-content">
                             <div class="offer-vendor-row">
-                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;"></div>
-                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;">Our Offer</div>
-                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;">Vendor's Asking</div>
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px; font-weight: bold;">Field</div>
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px; font-weight: bold;">Our Offer</div>
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px; font-weight: bold;">Vendor's Asking</div>
                             </div>
                             {% for item in data.our_offer %}
                             <div class="offer-vendor-row">
