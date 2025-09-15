@@ -29,7 +29,7 @@ def get_property_files():
         return []
 
 def load_property_data(property_id):
-    """Load property data from Excel file with proper multi-column layout"""
+    """Load property data from Excel file with complete multi-section layout"""
     excel_file = f"{property_id}.xlsx"
     if not os.path.exists(excel_file):
         return None
@@ -38,7 +38,7 @@ def load_property_data(property_id):
         # Read the Property Info sheet with all columns
         df = pd.read_excel(excel_file, sheet_name='Property Info', header=None)
         
-        # Structure the data to match the Excel layout
+        # Structure the data to match the complete Excel layout
         data = {
             'property_info': [],
             'owner_info': [],
@@ -55,47 +55,79 @@ def load_property_data(property_id):
         for idx, row in df.iterrows():
             col_a = str(row[0]) if pd.notna(row[0]) else ""
             col_b = str(row[1]) if pd.notna(row[1]) else ""
+            col_c = str(row[2]) if pd.notna(row[2]) else ""
             col_e = str(row[4]) if pd.notna(row[4]) else ""
             col_f = str(row[5]) if pd.notna(row[5]) else ""
             
-            # Property Information section (Column A-B)
-            if col_a and col_a != "nan":
-                if col_a == "Property Information":
-                    continue
-                elif col_a in ["Building Breakdown"]:
-                    continue
-                elif col_a in ["Our Offer", "Vendor's Asking"]:
-                    continue
-                elif col_a == "Income":
-                    continue
-                elif col_a not in ["", "nan"] and idx < 25:  # Property info section
-                    data['property_info'].append({
-                        'field': col_a,
-                        'value': col_b,
-                        'row': idx
-                    })
+            # Property Information section (Rows 1-14, Column A-B)
+            if 1 <= idx <= 14 and col_a != "nan" and col_a not in ["Property Information", ""]:
+                data['property_info'].append({
+                    'field': col_a,
+                    'value': col_b if col_b != "nan" else "",
+                    'row': idx
+                })
             
-            # Owner Information section (Column E-F)
-            if col_e and col_e != "nan":
-                if col_e == "Owner Information":
-                    continue
-                elif col_e == "Important Info":
-                    continue
-                elif col_e == "Questions":
-                    continue
-                elif col_e not in ["", "nan"]:
-                    if idx <= 12:  # Owner info section
-                        data['owner_info'].append({
-                            'field': col_e,
-                            'value': col_f,
-                            'row': idx
-                        })
-                    elif 13 <= idx <= 20:  # Important info section
-                        data['important_info'].append({
-                            'field': col_e,
-                            'value': col_f,
-                            'row': idx
-                        })
+            # Owner Information section (Rows 1-5, Column E-F)
+            elif 1 <= idx <= 5 and col_e != "nan" and col_e not in ["Owner Information", ""]:
+                data['owner_info'].append({
+                    'field': col_e,
+                    'value': col_f if col_f != "nan" else "",
+                    'row': idx
+                })
+            
+            # Title section (Rows 7-11, Column E-F)
+            elif 7 <= idx <= 11 and col_e != "nan" and col_e not in ["Title", ""]:
+                data['title_info'].append({
+                    'field': col_e,
+                    'value': col_f if col_f != "nan" else "",
+                    'row': idx
+                })
+            
+            # Important Info section (Rows 13-18, Column E-F)
+            elif 13 <= idx <= 18 and col_e != "nan" and col_e not in ["Important Info", ""]:
+                data['important_info'].append({
+                    'field': col_e,
+                    'value': col_f if col_f != "nan" else "",
+                    'row': idx
+                })
+            
+            # Building Breakdown section (Rows 16-21, Column A-B)
+            elif 16 <= idx <= 21 and col_a != "nan" and col_a not in ["Building Breakdown", ""]:
+                data['building_breakdown'].append({
+                    'field': col_a,
+                    'value': col_b if col_b != "nan" else "",
+                    'row': idx
+                })
+            
+            # Our Offer section (Rows 23-28, Column A-B)
+            elif 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
+                data['our_offer'].append({
+                    'field': col_a,
+                    'value': col_b if col_b != "nan" else "",
+                    'row': idx
+                })
+            
+            # Vendor's Asking section (Rows 23-28, Column C)
+            elif 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
+                # Add vendor asking value for the same field
+                if data['our_offer'] and data['our_offer'][-1]['row'] == idx:
+                    data['our_offer'][-1]['vendor_value'] = col_c if col_c != "nan" else ""
+            
+            # Income section (Rows 30-37, Column A-B)
+            elif 30 <= idx <= 37 and col_a != "nan" and col_a not in ["Income", ""]:
+                data['income'].append({
+                    'field': col_a,
+                    'value': col_b if col_b != "nan" else "",
+                    'row': idx
+                })
+            
+            # Questions section (Row 29+, Column E-F)
+            elif idx >= 29 and col_e != "nan" and col_e not in ["Questions", ""]:
+                data['questions'].append({
+                    'field': col_e,
+                    'value': col_f if col_f != "nan" else "",
+                    'row': idx
+                })
         
         return data
     except Exception as e:
@@ -103,7 +135,7 @@ def load_property_data(property_id):
         return None
 
 def save_property_data(property_id, form_data):
-    """Save property data back to Excel file"""
+    """Save property data back to Excel file with all sections"""
     excel_file = f"{property_id}.xlsx"
     
     # Create backup
@@ -118,12 +150,17 @@ def save_property_data(property_id, form_data):
         
         # Update values in the appropriate columns
         for idx, row in df.iterrows():
-            # Check column A (Property Information section)
+            # Check column A (Property Information, Building Breakdown, Our Offer, Income sections)
             if pd.notna(row[0]) and str(row[0]).strip() in form_data:
                 field_name = str(row[0]).strip()
                 df.iloc[idx, 1] = form_data[field_name]  # Update column B
+                
+                # Handle vendor asking values (column C)
+                vendor_field = f"{field_name}_vendor"
+                if vendor_field in form_data:
+                    df.iloc[idx, 2] = form_data[vendor_field]  # Update column C
             
-            # Check column E (Owner Information and Important Info sections)
+            # Check column E (Owner Information, Title, Important Info, Questions sections)
             if pd.notna(row[4]) and str(row[4]).strip() in form_data:
                 field_name = str(row[4]).strip()
                 df.iloc[idx, 5] = form_data[field_name]  # Update column F
@@ -192,58 +229,86 @@ PROPERTY_FORM_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 1600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #333; text-align: center; margin-bottom: 30px; }
         
-        /* Excel-style layout */
-        .excel-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-        .left-column, .right-column { display: flex; flex-direction: column; gap: 20px; }
+        /* Main layout - 3 columns to match Excel */
+        .excel-layout { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr 1fr; 
+            gap: 20px; 
+            margin-bottom: 20px;
+        }
         
         /* Section styling to match Excel */
-        .section { border: 1px solid #ccc; border-radius: 5px; overflow: hidden; }
+        .section { border: 1px solid #ccc; border-radius: 5px; overflow: hidden; margin-bottom: 20px; }
         .section-header { 
             background: #70ad47; /* Excel green */
             color: white; 
             font-weight: bold; 
-            padding: 10px 15px; 
+            padding: 8px 12px; 
             text-align: center;
-            font-size: 14px;
+            font-size: 13px;
         }
-        .section-content { padding: 10px; background: white; }
+        .section-content { padding: 0; background: white; }
         
         /* Form fields to match Excel cells */
         .field-row { 
             display: grid; 
-            grid-template-columns: 200px 1fr; 
+            grid-template-columns: 180px 1fr; 
             border-bottom: 1px solid #e0e0e0; 
-            min-height: 35px;
+            min-height: 32px;
             align-items: center;
         }
         .field-row:last-child { border-bottom: none; }
         .field-label { 
-            padding: 8px 12px; 
+            padding: 6px 10px; 
             background: #f8f9fa; 
             border-right: 1px solid #e0e0e0;
             font-weight: 500;
-            font-size: 13px;
+            font-size: 12px;
         }
-        .field-input { padding: 5px; }
+        .field-input { padding: 0; }
         .field-input input, .field-input textarea { 
             width: 100%; 
             border: none; 
-            padding: 8px 12px; 
-            font-size: 13px;
+            padding: 6px 10px; 
+            font-size: 12px;
             background: transparent;
             outline: none;
+            box-sizing: border-box;
         }
         .field-input input:focus, .field-input textarea:focus { 
             background: #fff3cd; 
             box-shadow: inset 0 0 3px rgba(0,123,255,0.3);
         }
-        .field-input textarea { height: 60px; resize: vertical; }
+        .field-input textarea { height: 50px; resize: vertical; }
+        
+        /* Special layouts for specific sections */
+        .offer-vendor-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .offer-vendor-row {
+            display: grid;
+            grid-template-columns: 140px 1fr 1fr;
+            border-bottom: 1px solid #e0e0e0;
+            min-height: 32px;
+            align-items: center;
+        }
+        
+        .questions-section .field-input textarea {
+            height: 300px;
+        }
+        
+        /* Full width sections */
+        .full-width { grid-column: 1 / -1; }
         
         /* Buttons */
-        .button-row { margin: 30px 0; text-align: center; }
+        .button-row { margin: 30px 0; text-align: center; grid-column: 1 / -1; }
         .save-btn { 
             background: #28a745; 
             color: white; 
@@ -273,14 +338,9 @@ PROPERTY_FORM_TEMPLATE = """
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         
-        /* Multi-section layout for bottom sections */
-        .bottom-sections { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
-            gap: 20px; 
-            margin-top: 20px; 
+        @media (max-width: 1200px) {
+            .excel-layout { grid-template-columns: 1fr 1fr; }
         }
-        
         @media (max-width: 768px) {
             .excel-layout { grid-template-columns: 1fr; }
             .field-row { grid-template-columns: 1fr; }
@@ -299,8 +359,8 @@ PROPERTY_FORM_TEMPLATE = """
         {% if data %}
         <form method="POST">
             <div class="excel-layout">
-                <!-- Left Column: Property Information -->
-                <div class="left-column">
+                <!-- Column 1: Property Information -->
+                <div class="column-1">
                     <div class="section">
                         <div class="section-header">Property Information</div>
                         <div class="section-content">
@@ -308,7 +368,7 @@ PROPERTY_FORM_TEMPLATE = """
                             <div class="field-row">
                                 <div class="field-label">{{ item.field }}</div>
                                 <div class="field-input">
-                                    {% if item.field in ['Google Maps Link', 'Google Maps Building SF', 'Notes'] %}
+                                    {% if item.field in ['Google Maps Link', 'Notes'] %}
                                     <textarea name="{{ item.field }}" placeholder="Enter {{ item.field }}">{{ item.value if item.value != 'nan' else '' }}</textarea>
                                     {% else %}
                                     <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Enter {{ item.field }}">
@@ -318,10 +378,38 @@ PROPERTY_FORM_TEMPLATE = """
                             {% endfor %}
                         </div>
                     </div>
+                    
+                    <div class="section">
+                        <div class="section-header">Building Breakdown</div>
+                        <div class="section-content">
+                            {% for item in data.building_breakdown %}
+                            <div class="field-row">
+                                <div class="field-label">{{ item.field }}</div>
+                                <div class="field-input">
+                                    <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Enter {{ item.field }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <div class="section">
+                        <div class="section-header">Income</div>
+                        <div class="section-content">
+                            {% for item in data.income %}
+                            <div class="field-row">
+                                <div class="field-label">{{ item.field }}</div>
+                                <div class="field-input">
+                                    <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Enter {{ item.field }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
                 
-                <!-- Right Column: Owner Information -->
-                <div class="right-column">
+                <!-- Column 2: Owner Information -->
+                <div class="column-2">
                     <div class="section">
                         <div class="section-header">Owner Information</div>
                         <div class="section-content">
@@ -336,6 +424,22 @@ PROPERTY_FORM_TEMPLATE = """
                         </div>
                     </div>
                     
+                    {% if data.title_info %}
+                    <div class="section">
+                        <div class="section-header">Title</div>
+                        <div class="section-content">
+                            {% for item in data.title_info %}
+                            <div class="field-row">
+                                <div class="field-label">{{ item.field }}</div>
+                                <div class="field-input">
+                                    <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Enter {{ item.field }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     {% if data.important_info %}
                     <div class="section">
                         <div class="section-header">Important Info</div>
@@ -344,7 +448,7 @@ PROPERTY_FORM_TEMPLATE = """
                             <div class="field-row">
                                 <div class="field-label">{{ item.field }}</div>
                                 <div class="field-input">
-                                    {% if item.field in ['Type of Property', 'Notes'] %}
+                                    {% if item.field in ['Type of Property'] %}
                                     <textarea name="{{ item.field }}" placeholder="Enter {{ item.field }}">{{ item.value if item.value != 'nan' else '' }}</textarea>
                                     {% else %}
                                     <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Enter {{ item.field }}">
@@ -356,11 +460,56 @@ PROPERTY_FORM_TEMPLATE = """
                     </div>
                     {% endif %}
                 </div>
-            </div>
-            
-            <div class="button-row">
-                <button type="submit" class="save-btn">💾 Save Changes</button>
-                <a href="/properties" class="back-btn">← Back to Properties</a>
+                
+                <!-- Column 3: Questions (large section) -->
+                <div class="column-3">
+                    {% if data.questions %}
+                    <div class="section questions-section">
+                        <div class="section-header">Questions</div>
+                        <div class="section-content">
+                            {% for item in data.questions %}
+                            <div class="field-row">
+                                <div class="field-label">{{ item.field }}</div>
+                                <div class="field-input">
+                                    <textarea name="{{ item.field }}" placeholder="Enter {{ item.field }}">{{ item.value if item.value != 'nan' else '' }}</textarea>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Full Width: Our Offer vs Vendor's Asking -->
+                <div class="full-width">
+                    {% if data.our_offer %}
+                    <div class="section">
+                        <div class="section-content">
+                            <div class="offer-vendor-row">
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;"></div>
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;">Our Offer</div>
+                                <div class="field-label" style="background: #70ad47; color: white; text-align: center; padding: 8px;">Vendor's Asking</div>
+                            </div>
+                            {% for item in data.our_offer %}
+                            <div class="offer-vendor-row">
+                                <div class="field-label">{{ item.field }}</div>
+                                <div class="field-input">
+                                    <input type="text" name="{{ item.field }}" value="{{ item.value if item.value != 'nan' else '' }}" placeholder="Our {{ item.field }}">
+                                </div>
+                                <div class="field-input">
+                                    <input type="text" name="{{ item.field }}_vendor" value="{{ item.vendor_value if item.vendor_value is defined and item.vendor_value != 'nan' else '' }}" placeholder="Vendor {{ item.field }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="button-row">
+                    <button type="submit" class="save-btn">💾 Save Changes</button>
+                    <a href="/properties" class="back-btn">← Back to Properties</a>
+                </div>
             </div>
         </form>
         {% else %}
