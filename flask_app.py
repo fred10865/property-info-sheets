@@ -68,7 +68,7 @@ def load_property_data(property_id):
                 })
             
             # Owner Information section (Rows 1-5, Column E-F)
-            elif 1 <= idx <= 5 and col_e != "nan" and col_e not in ["Owner Information", ""]:
+            if 1 <= idx <= 5 and col_e != "nan" and col_e not in ["Owner Information", ""]:
                 data['owner_info'].append({
                     'field': col_e,
                     'value': col_f if col_f != "nan" else "",
@@ -76,7 +76,7 @@ def load_property_data(property_id):
                 })
             
             # Title section (Rows 7-11, Column E-F)
-            elif 7 <= idx <= 11 and col_e != "nan" and col_e not in ["Title", ""]:
+            if 7 <= idx <= 11 and col_e != "nan" and col_e not in ["Title", ""]:
                 data['title_info'].append({
                     'field': col_e,
                     'value': col_f if col_f != "nan" else "",
@@ -84,7 +84,7 @@ def load_property_data(property_id):
                 })
             
             # Important Info section (Rows 13-18, Column E-F)
-            elif 13 <= idx <= 18 and col_e != "nan" and col_e not in ["Important Info", ""]:
+            if 13 <= idx <= 18 and col_e != "nan" and col_e not in ["Important Info", ""]:
                 data['important_info'].append({
                     'field': col_e,
                     'value': col_f if col_f != "nan" else "",
@@ -92,7 +92,7 @@ def load_property_data(property_id):
                 })
             
             # Building Breakdown section (Rows 16-21, Column A-B)
-            elif 16 <= idx <= 21 and col_a != "nan" and col_a not in ["Building Breakdown", ""]:
+            if 16 <= idx <= 21 and col_a != "nan" and col_a not in ["Building Breakdown", ""]:
                 data['building_breakdown'].append({
                     'field': col_a,
                     'value': col_b if col_b != "nan" else "",
@@ -100,7 +100,7 @@ def load_property_data(property_id):
                 })
             
             # Our Offer section (Rows 23-28, Column A-B)
-            elif 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
+            if 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
                 data['our_offer'].append({
                     'field': col_a,
                     'value': col_b if col_b != "nan" else "",
@@ -108,13 +108,13 @@ def load_property_data(property_id):
                 })
             
             # Vendor's Asking section (Rows 23-28, Column C)
-            elif 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
+            if 23 <= idx <= 28 and col_a != "nan" and col_a not in [""]:
                 # Add vendor asking value for the same field
                 if data['our_offer'] and data['our_offer'][-1]['row'] == idx:
                     data['our_offer'][-1]['vendor_value'] = col_c if col_c != "nan" else ""
             
             # Income section (Rows 30-37, Column A-B)
-            elif 30 <= idx <= 37 and col_a != "nan" and col_a not in ["Income", ""]:
+            if 30 <= idx <= 37 and col_a != "nan" and col_a not in ["Income", ""]:
                 data['income'].append({
                     'field': col_a,
                     'value': col_b if col_b != "nan" else "",
@@ -122,7 +122,7 @@ def load_property_data(property_id):
                 })
             
             # Questions section (Row 29+, Column E-F)
-            elif idx >= 29 and col_e != "nan" and col_e not in ["Questions", ""]:
+            if idx >= 29 and col_e != "nan" and col_e not in ["Questions", ""]:
                 data['questions'].append({
                     'field': col_e,
                     'value': col_f if col_f != "nan" else "",
