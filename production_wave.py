@@ -366,6 +366,9 @@ async def save_property(q):
 
 # Initialize the application
 if __name__ == "__main__":
+    # Initialize the app
+    print("🚀 Initializing H2O Wave Multi-Property System...")
+    
     # Create property selector page
     create_property_selector()
     
@@ -375,11 +378,36 @@ if __name__ == "__main__":
         property_id = file.replace('.xlsx', '')
         create_property_editor(property_id)
     
-    print("🚀 H2O Wave Multi-Property System is ready!")
+    print("✅ H2O Wave Multi-Property System is ready!")
     print(f"🌐 Main page: {get_base_url()}/properties")
     print("\n📋 Property URLs for CRM:")
     for file in excel_files:
         property_id = file.replace('.xlsx', '')
         print(f"  {property_id}: {get_base_url()}/property/{property_id}")
     
-    print(f"\n🔧 Server running on host: {PRODUCTION_HOST}, port: {PRODUCTION_PORT}")
+    print(f"\n🔧 Server configured for host: {PRODUCTION_HOST}, port: {PRODUCTION_PORT}")
+    
+    # For cloud deployment, we need a different approach
+    # H2O Wave apps typically need a Wave server to be running
+    print("📡 For cloud deployment, this app creates pages that a Wave server will serve.")
+    print("💡 The Wave daemon should be started separately in production.")
+    
+    # Keep the process alive to maintain the pages
+    import time
+    import signal
+    import sys
+    
+    def signal_handler(sig, frame):
+        print('\n👋 Gracefully shutting down...')
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    print("⏳ Keeping app alive... (Ctrl+C to stop)")
+    try:
+        while True:
+            time.sleep(30)  # Check every 30 seconds
+            # Optionally refresh pages here if needed
+    except KeyboardInterrupt:
+        print("\n👋 Shutting down...")

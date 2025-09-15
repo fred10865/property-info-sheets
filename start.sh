@@ -7,4 +7,17 @@ chmod +x waved
 ./waved &
 cd ..
 sleep 5
+#!/bin/bash
+# Production start script - works with Railway, Render, Heroku
+
+# Set environment variables
+export PYTHONPATH="${PYTHONPATH}:."
+export PORT=${PORT:-8000}
+
+# Create required directories
+mkdir -p backups
+mkdir -p properties
+
+# Start the application
+echo "Starting Property Info Sheet App on port $PORT..."
 python production_wave.py
