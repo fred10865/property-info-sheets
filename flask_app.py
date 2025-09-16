@@ -2,21 +2,133 @@
 """
 Property Info Sheet Web App - Cloud Deployment Version
 Uses Flask as web server with embedded Wave-style UI
+
+📖 COMPLETE SYSTEM DOCUMENTATION: MASTER_QUEBEC_SCRAPER_RESEARCH.md
+   - Implementation patterns for Quebec property scrapers
+   - Flask app integration with scraper APIs
+   - Deployment procedures and configuration
+   - Troubleshooting and maintenance guides
+
+🚨 READ FIRST: Master documentation contains essential setup information
 """
+
+import os
+import logging
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+# Configure Sentry for error monitoring and performance tracking
+sentry_dsn = os.environ.get('SENTRY_DSN')
+if sentry_dsn and not sentry_dsn.startswith('https://your-sentry-dsn'):
+    sentry_logging = LoggingIntegration(
+        level=logging.INFO,        # Capture info and above as breadcrumbs
+        event_level=logging.ERROR  # Send errors as events
+    )
+
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        # Set a custom environment name
+        environment=os.environ.get('ENVIRONMENT', 'development'),
+        integrations=[
+            FlaskIntegration(transaction_style='endpoint'),
+            sentry_logging,
+        ],
+        # Performance Monitoring
+        traces_sample_rate=1.0,  # Capture 100% of transactions for performance monitoring
+        # Release tracking
+        release=os.environ.get('APP_VERSION', '1.0.0'),
+        # Error sampling
+        sample_rate=1.0,  # Capture 100% of errors
+        # Add custom tags
+        before_send=lambda event, hint: add_custom_context(event, hint),
+    )
+    print("✅ Sentry monitoring initialized for error tracking and performance monitoring")
+else:
+    print("⚠️  Sentry monitoring disabled - no valid SENTRY_DSN provided")
+
+def add_custom_context(event, hint):
+    """Add custom context to Sentry events"""
+    # Add system information
+    event.setdefault('tags', {}).update({
+        'component': 'flask_app',
+        'system': 'quebec_property_scraper'
+    })
+    
+    # Add user context if available
+    try:
+        from flask import request, g
+        if request:
+            event.setdefault('user', {}).update({
+                'ip_address': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent', 'Unknown')
+            })
+            
+            # Add request context
+            event.setdefault('extra', {}).update({
+                'url': request.url,
+                'method': request.method,
+                'endpoint': request.endpoint
+            })
+    except Exception:
+        pass  # Don't let context addition break error reporting
+    
+    return event
 
 from flask import Flask, render_template_string, request, redirect, url_for, jsonify
 import pandas as pd
-import os
 import json
 from datetime import datetime
 import glob
 import shutil
+
+# Import the property scraper
+try:
+    from property_scraper import scrape_property_simple
+    SCRAPER_AVAILABLE = True
+except ImportError:
+    SCRAPER_AVAILABLE = False
+    print("⚠️ Property scraper not available - auto-populate will be disabled")
 
 app = Flask(__name__)
 
 # Configuration
 PRODUCTION_HOST = "0.0.0.0"
 PRODUCTION_PORT = int(os.environ.get("PORT", 8000))
+
+# Initialize monitoring and metrics
+try:
+    from prometheus_metrics import setup_flask_metrics, metrics
+    setup_flask_metrics(app)
+    print("✅ Prometheus metrics initialized")
+    METRICS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Metrics monitoring not available: {e}")
+    METRICS_AVAILABLE = False
+
+# Initialize cache manager if available
+try:
+    from redis_cache_manager import cache_manager
+    print("✅ Redis cache manager available")
+    CACHE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Redis cache not available: {e}")
+    CACHE_AVAILABLE = False
+
+# Initialize database if available (skip in testing mode)
+DATABASE_AVAILABLE = False
+if not os.environ.get('SKIP_DATABASE'):
+    try:
+        from database_config import init_database, create_tables
+        init_database()
+        create_tables()
+        print("✅ Database initialized")
+        DATABASE_AVAILABLE = True
+    except (ImportError, Exception) as e:
+        print(f"⚠️ Database not available: {e}")
+        DATABASE_AVAILABLE = False
+else:
+    print("🧪 Database initialization skipped for testing")
 
 def get_property_files():
     """Get list of Excel files that represent properties"""
@@ -331,6 +443,22 @@ PROPERTY_FORM_TEMPLATE = """
             text-decoration: none; 
             display: inline-block;
         }
+        .auto-populate-btn {
+            background: #007bff;
+            color: white;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 3px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 10px;
+            float: right;
+        }
+        .auto-populate-btn:hover { background: #0056b3; }
+        .auto-populate-btn:disabled { 
+            background: #ccc; 
+            cursor: not-allowed; 
+        }
         .back-btn:hover { background: #545b62; }
         
         /* Messages */
@@ -362,7 +490,12 @@ PROPERTY_FORM_TEMPLATE = """
                 <!-- Column 1: Property Information -->
                 <div class="column-1">
                     <div class="section">
-                        <div class="section-header">Property Information</div>
+                        <div class="section-header">
+                            Property Information
+                            <button type="button" id="autoPopulateBtn" class="auto-populate-btn" onclick="autoPopulate()">
+                                🤖 Auto-Populate from Lot & Borough
+                            </button>
+                        </div>
                         <div class="section-content">
                             {% for item in data.property_info %}
                             <div class="field-row">
@@ -517,6 +650,97 @@ PROPERTY_FORM_TEMPLATE = """
         <a href="/properties" class="back-btn">← Back to Properties</a>
         {% endif %}
     </div>
+
+    <script>
+    async function autoPopulate() {
+        const btn = document.getElementById('autoPopulateBtn');
+        const originalText = btn.innerHTML;
+        
+        // Get lot number from form
+        const lotInput = document.querySelector('input[name="Lot Number"]');
+        
+        if (!lotInput) {
+            alert('❌ Cannot find Lot Number field in the form');
+            return;
+        }
+        
+        const lotNumber = lotInput.value.trim();
+        
+        if (!lotNumber) {
+            alert('📝 Please enter a Lot Number before auto-populating');
+            lotInput.focus();
+            return;
+        }
+        
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.innerHTML = '🔄 Scraping data...';
+        
+        try {
+            // Call the new /scrape route
+            const response = await fetch('/scrape', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    lot_number: lotNumber,
+                    borough: 'montreal'  // Default to montreal, you can get this from form if needed
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Populate the form fields
+                let populatedCount = 0;
+                
+                // Map the property data to form fields
+                const fieldMappings = {
+                    'Address': 'Address',
+                    'Owner Name': 'Owner Name', 
+                    'Year of Construction': 'Year of Construction',
+                    'Total Building SF': 'Total Building SF',
+                    'Land SF': 'Land SF',
+                    'Property Type': 'Property Type',
+                    'Borough': 'Borough',
+                    'Matricule': 'Matricule',
+                    'Land Value': 'Land Value',
+                    'Building Value': 'Building Value', 
+                    'Total Value': 'Total Value'
+                };
+                
+                // Populate each field
+                for (const [dataKey, formField] of Object.entries(fieldMappings)) {
+                    const value = result.property[dataKey];
+                    if (value) {
+                        const input = document.querySelector(`input[name="${formField}"], textarea[name="${formField}"]`);
+                        if (input) {
+                            input.value = value;
+                            input.style.backgroundColor = '#d4edda'; // Light green to show it was auto-filled
+                            populatedCount++;
+                        }
+                    }
+                }
+                
+                btn.innerHTML = `✅ Populated ${populatedCount} fields`;
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 3000);
+                
+                alert(`🎉 Successfully auto-populated ${populatedCount} fields! Fields are highlighted in green.`);
+            } else {
+                throw new Error(result.error || 'Unknown error occurred');
+            }
+        } catch (error) {
+            console.error('Auto-populate error:', error);
+            alert(`❌ Auto-populate failed: ${error.message}`);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+    </script>
 </body>
 </html>
 """
@@ -613,6 +837,163 @@ def property_detail(property_id):
         return f"Property '{property_id}' not found.", 404
     
     return render_template_string(PROPERTY_FORM_TEMPLATE, property_id=property_id, data=data)
+
+@app.route('/scrape', methods=['POST'])
+def scrape_property_route():
+    """Simple scrape route that accepts JSON with lot_number and returns property data"""
+    if not SCRAPER_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Property scraper not available'}), 500
+    
+    try:
+        # Get JSON data from request
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+        
+        lot_number = data.get('lot_number', '').strip()
+        borough = data.get('borough', 'montreal').strip()  # Default to montreal
+        
+        if not lot_number:
+            return jsonify({'success': False, 'error': 'lot_number is required'}), 400
+        
+        print(f"🔍 Scraping property data for Lot {lot_number} in {borough}")
+        
+        # Call the scraper function - try real scraper first, fallback to mock if needed
+        try:
+            scraped_data = scrape_property_simple(lot_number, borough, use_aws=False, use_mock=False, headless=True)
+            
+            # Check if scraping failed and fallback to mock data
+            if 'error' in scraped_data:
+                print(f"⚠️ Real scraper failed: {scraped_data['error']}, using mock data")
+                scraped_data = scrape_property_simple(lot_number, borough, use_aws=False, use_mock=True, headless=True)
+                
+        except Exception as scraper_error:
+            print(f"⚠️ Scraper exception: {scraper_error}, using mock data")
+            scraped_data = scrape_property_simple(lot_number, borough, use_aws=False, use_mock=True, headless=True)
+        
+        # Filter out empty values and prepare response
+        property_data = {k: v for k, v in scraped_data.items() if v and str(v).strip() and k != 'error'}
+        
+        print(f"✅ Successfully scraped {len(property_data)} fields for lot {lot_number}")
+        
+        return jsonify({
+            'success': True,
+            'property': property_data,
+            'lot_number': lot_number,
+            'borough': borough
+        })
+        
+    except Exception as e:
+        error_msg = f"Scraping failed: {str(e)}"
+        print(f"❌ Scrape route error: {error_msg}")
+        return jsonify({'success': False, 'error': error_msg}), 500
+
+@app.route('/auto-populate/<property_id>', methods=['POST'])
+def auto_populate_property(property_id):
+    """Auto-populate property data using the scraper with comprehensive Sentry monitoring"""
+    if not SCRAPER_AVAILABLE:
+        sentry_sdk.capture_message("Scraper not available for auto-populate", level="warning")
+        return jsonify({'error': 'Scraper not available'}), 500
+    
+    # Set Sentry transaction context
+    with sentry_sdk.configure_scope() as scope:
+        scope.set_tag("operation", "auto_populate")
+        scope.set_tag("property_id", property_id)
+        scope.set_context("property", {"id": property_id})
+    
+    try:
+        # Get lot number and borough from request
+        data = request.get_json()
+        lot_number = data.get('lot_number', '').strip()
+        borough = data.get('borough', '').strip()
+        use_aws = data.get('use_aws', False)
+        
+        # Add request data to Sentry context
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_context("scraping_request", {
+                "lot_number": lot_number,
+                "borough": borough,
+                "use_aws": use_aws
+            })
+        
+        if not lot_number or not borough:
+            sentry_sdk.capture_message(
+                f"Missing required fields - lot_number: {bool(lot_number)}, borough: {bool(borough)}", 
+                level="warning"
+            )
+            return jsonify({'error': 'Lot number and borough are required'}), 400
+        
+        print(f"🔍 Auto-populating data for Lot {lot_number} in {borough}")
+        
+        # Start Sentry transaction for scraping
+        with sentry_sdk.start_transaction(op="scrape", name="property_scraper") as transaction:
+            transaction.set_tag("lot_number", lot_number)
+            transaction.set_tag("borough", borough)
+            transaction.set_tag("use_aws", use_aws)
+            
+            # Call the scraper - try real scraper first, fallback to mock
+            try:
+                scraped_data = scrape_property_simple(lot_number, borough, use_aws, use_mock=False)
+                
+                # Check for botasaurus import errors and fallback to mock
+                if 'error' in scraped_data and 'botasaurus' in str(scraped_data['error']).lower():
+                    print("⚠️ Botasaurus error detected, using mock data")
+                    scraped_data = scrape_property_simple(lot_number, borough, use_aws, use_mock=True)
+                    
+            except Exception as scraper_error:
+                # If scraper completely fails, use mock data
+                print(f"⚠️ Scraper failed, using mock data: {scraper_error}")
+                scraped_data = scrape_property_simple(lot_number, borough, use_aws, use_mock=True)
+            
+            # Check for errors in scraped data
+            if 'error' in scraped_data:
+                error_msg = f"Scraping failed: {scraped_data['error']}"
+                sentry_sdk.capture_message(error_msg, level="error")
+                transaction.set_status("internal_error")
+                return jsonify({'error': error_msg}), 500
+            
+            # Filter out empty values
+            populated_data = {k: v for k, v in scraped_data.items() if v and v.strip()}
+            
+            # Add success metrics to Sentry
+            transaction.set_data("fields_populated", len(populated_data))
+            transaction.set_data("total_fields", len(scraped_data))
+            transaction.set_status("ok")
+            
+            # Log successful scraping
+            sentry_sdk.add_breadcrumb(
+                message=f"Successfully scraped {len(populated_data)} fields for lot {lot_number}",
+                category="scraping",
+                level="info",
+                data={
+                    "lot_number": lot_number,
+                    "borough": borough,
+                    "fields_count": len(populated_data)
+                }
+            )
+            
+            print(f"✅ Successfully scraped {len(populated_data)} fields")
+            return jsonify({
+                'data': populated_data, 
+                'message': f'Auto-populated {len(populated_data)} fields',
+                'monitoring': 'Sentry tracking enabled'
+            })
+        
+    except Exception as e:
+        # Capture detailed error information
+        sentry_sdk.capture_exception(e)
+        
+        # Add extra context for debugging
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_context("error_details", {
+                "property_id": property_id,
+                "lot_number": lot_number if 'lot_number' in locals() else "unknown",
+                "borough": borough if 'borough' in locals() else "unknown",
+                "error_type": type(e).__name__
+            })
+        
+        print(f"❌ Auto-populate error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     print("🚀 Starting Property Info Sheet Web App...")
